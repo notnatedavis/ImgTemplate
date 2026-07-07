@@ -2,7 +2,7 @@
 
 A browser‑based tool to **crop images** and **overlay custom grid lines** using an interactive HSL colour picker.
 
-**Live demo:** [notnatedavis.github.io/imgTemplate](https://notnatedavis.github.io/imgTemplate)
+**Live demo:** [notnatedavis.github.io/ImgTemplate/](https://notnatedavis.github.io/ImgTemplate/)
 
 ## Table of Contents
 
