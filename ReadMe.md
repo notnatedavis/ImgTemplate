@@ -1,4 +1,4 @@
-# imgTemplate
+# ImgTemplate
 
 A browser‑based tool to **crop images** and **overlay custom grid lines** using an interactive HSL colour picker.
 
@@ -54,7 +54,7 @@ After running `npm run deploy`, your site will be available at `https://<usernam
 ## Project Structure
 
 ```bash
-imgTemplate/
+ImgTemplate/
 ├── assets/
 │   └── icons/            # (optional icons)
 ├── css/

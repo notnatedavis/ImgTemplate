@@ -5,13 +5,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>imgTemplate – Grid Overlay Tool</title>
+  <title>ImgTemplate – Grid Overlay Tool</title>
   <link rel="stylesheet" href="/css/style.css" />
 </head>
 <body>
   <div id="app">
     <header>
-      <h1>imgTemplate</h1>
+      <h1>Img Template</h1>
       <p>Crop &amp; overlay custom grid lines</p>
     </header>
 
@@ -25,26 +25,26 @@
       <!-- Controls panel (hidden until image loaded) -->
       <div id="controls" class="controls" style="display: none;">
         <div class="control-group">
-          <label for="crop-ratio">Crop Ratio</label>
-          <select id="crop-ratio">
-            <option value="original">Original</option>
-            <option value="1:1" selected>1:1 (Square)</option>
+          <label for="crop-checkbox">Crop Image</label>
+          <input type="checkbox" id="crop-checkbox" />
+          <select id="crop-ratio" style="display: none;">
+            <option value="1:1">1:1 (Square)</option>
             <option value="4:3">4:3</option>
           </select>
         </div>
 
         <div class="control-group">
           <label for="divisions-x">Horizontal Divisions</label>
-          <input type="number" id="divisions-x" min="1" max="50" value="7" />
+          <input type="number" id="divisions-x" min="1" max="50" value="3" />
         </div>
 
         <div class="control-group">
           <label for="divisions-y">Vertical Divisions</label>
-          <input type="number" id="divisions-y" min="1" max="50" value="7" />
+          <input type="number" id="divisions-y" min="1" max="50" value="3" />
         </div>
 
         <div class="control-group">
-          <label>Grid Line Colour</label>
+          <label>Grid Line Colour (Hue)</label>
           <div id="hsl-picker-container"></div>
         </div>
 

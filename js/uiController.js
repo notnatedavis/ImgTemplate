@@ -1,5 +1,6 @@
 //   js/uiController.js
-//   DOM manipulation, event wiring, and the HSL colour picker
+//   DOM manipulation, event wiring, Hue‑only colour picker, and
+//   interactive crop repositioning via drag on the preview canvas
 
 // ----- Imports -----
 import { loadImage, cropImage, scaleToFit } from './imageUtils.js';
@@ -11,6 +12,15 @@ let originalImage = null;          // HTMLImageElement
 let currentCropCanvas = null;      // HTMLCanvasElement from crop (or null)
 let currentCropDim = { width: 0, height: 0 };
 
+// crop offsets (0‑1) – default centred
+let cropOffsetX = 0.5;
+let cropOffsetY = 0.5;
+
+// drag tracking
+let isDragging = false;
+let dragStart = { x: 0, y: 0 };       // mouse position at drag start
+let dragStartOffset = { x: 0.5, y: 0.5 }; // offsets at drag start
+
 // ----- DOM references -----
 const dropZone = document.getElementById('drop-zone');
 const fileInput = document.getElementById('file-input');
@@ -18,112 +28,100 @@ const controlsDiv = document.getElementById('controls');
 const previewCanvas = document.getElementById('preview-canvas');
 const errorMsg = document.getElementById('error-message');
 const downloadBtn = document.getElementById('download-btn');
+const cropCheckbox = document.getElementById('crop-checkbox');
 const cropRatioSelect = document.getElementById('crop-ratio');
 const divXInput = document.getElementById('divisions-x');
 const divYInput = document.getElementById('divisions-y');
 const hslContainer = document.getElementById('hsl-picker-container');
 
-// ----- HSL Colour Picker (custom) -----
-let gridColor = { h: 0, s: 100, l: 50 };  // default red
+// ----- Hue‑only colour picker -----
+let gridHue = 0;   // default hue (red)
 
-const createHSLColorPicker = (container) => {
+const createHuePicker = (container) => {
   container.innerHTML = '';
 
   const pickerDiv = document.createElement('div');
   pickerDiv.className = 'hsl-picker';
 
-  const createSlider = (label, min, max, value, property, gradientFn) => {
-    const row = document.createElement('div');
-    row.className = 'hsl-slider-row';
+  // Hue slider
+  const hueRow = document.createElement('div');
+  hueRow.className = 'hsl-slider-row';
 
-    const badge = document.createElement('span');
-    badge.className = 'hsl-slider-badge';
-    badge.textContent = label;
-    row.appendChild(badge);
+  const badge = document.createElement('span');
+  badge.className = 'hsl-slider-badge';
+  badge.textContent = 'H';
+  hueRow.appendChild(badge);
 
-    const slider = document.createElement('input');
-    slider.type = 'range';
-    slider.min = min;
-    slider.max = max;
-    slider.value = value;
-    slider.className = 'hsl-slider';
-    slider.setAttribute('aria-label', `Grid colour ${property}`);
+  const hueSlider = document.createElement('input');
+  hueSlider.type = 'range';
+  hueSlider.min = '0';
+  hueSlider.max = '360';
+  hueSlider.value = gridHue;
+  hueSlider.className = 'hsl-slider';
+  hueSlider.setAttribute('aria-label', 'Grid colour hue');
 
-    const updateSliderStyle = () => {
-      slider.style.background = gradientFn();
-      slider.style.setProperty('--thumb-color', `hsl(${gridColor.h}, ${gridColor.s}%, ${gridColor.l}%)`);
-    };
+  // full‑spectrum gradient from 0° to 360°
+  const gradient = `linear-gradient(
+    to right,
+    hsl(0,100%,50%),
+    hsl(60,100%,50%),
+    hsl(120,100%,50%),
+    hsl(180,100%,50%),
+    hsl(240,100%,50%),
+    hsl(300,100%,50%),
+    hsl(360,100%,50%)
+  )`;
 
-    slider.addEventListener('input', (e) => {
-      gridColor[property] = Number(e.target.value);
-      updateSliderStyle();
-      swatch.style.backgroundColor = `hsl(${gridColor.h}, ${gridColor.s}%, ${gridColor.l}%)`;
-      redrawPreview();
-    });
-
-    updateSliderStyle();
-    row.appendChild(slider);
-    return row;
+  const updateSliderStyle = () => {
+    hueSlider.style.background = gradient;
+    hueSlider.style.setProperty('--thumb-color', `hsl(${gridHue}, 100%, 50%)`);
   };
 
-  // Hue gradient
-  const hueGradient = () => `linear-gradient(to right, hsl(0,100%,50%), hsl(60,100%,50%), hsl(120,100%,50%), hsl(180,100%,50%), hsl(240,100%,50%), hsl(300,100%,50%), hsl(360,100%,50%))`;
-  const satGradient = () => `linear-gradient(to right, hsl(${gridColor.h},0%,${gridColor.l}%), hsl(${gridColor.h},100%,${gridColor.l}%))`;
-  const lightGradient = () => `linear-gradient(to right, hsl(${gridColor.h},${gridColor.s}%,0%), hsl(${gridColor.h},${gridColor.s}%,50%), hsl(${gridColor.h},${gridColor.s}%,100%))`;
+  hueSlider.addEventListener('input', (e) => {
+    gridHue = Number(e.target.value);
+    updateSliderStyle();
+    redrawPreview();
+  });
 
-  pickerDiv.appendChild(createSlider('H', 0, 360, gridColor.h, 'h', hueGradient));
-  pickerDiv.appendChild(createSlider('S', 0, 100, gridColor.s, 's', satGradient));
-  pickerDiv.appendChild(createSlider('L', 0, 100, gridColor.l, 'l', lightGradient));
+  updateSliderStyle();
+  hueRow.appendChild(hueSlider);
+  pickerDiv.appendChild(hueRow);
 
-  // Colour swatch
-  const swatchRow = document.createElement('div');
-  swatchRow.style.display = 'flex';
-  swatchRow.style.alignItems = 'center';
-  swatchRow.style.gap = '0.5rem';
-
-  const swatchLabel = document.createElement('span');
-  swatchLabel.textContent = 'Preview:';
-  swatchLabel.style.fontSize = '0.75rem';
-  swatchRow.appendChild(swatchLabel);
-
-  const swatch = document.createElement('span');
-  swatch.className = 'swatch';
-  swatch.style.backgroundColor = `hsl(${gridColor.h}, ${gridColor.s}%, ${gridColor.l}%)`;
-  swatchRow.appendChild(swatch);
-
-  pickerDiv.appendChild(swatchRow);
   container.appendChild(pickerDiv);
-
-  // Store swatch reference for updates
-  return swatch;
 };
-
-let swatchElement = null;
 
 // ----- Preview redraw -----
 const redrawPreview = () => {
   if (!originalImage) return;
 
-  const ratio = cropRatioSelect.value;
-  const { canvas: cropCanvas, width, height } = cropImage(
-    originalImage,
-    ratio === 'original' ? originalImage : ratio   // pass original image for 'original' case
-  );
+  const shouldCrop = cropCheckbox.checked;
+  let sourceCanvas;
+  let cropW, cropH;
 
-  // Fallback if crop returns null canvas (original ratio)
-  const sourceCanvas = cropCanvas || (() => {
-    const c = document.createElement('canvas');
-    c.width = originalImage.naturalWidth;
-    c.height = originalImage.naturalHeight;
-    c.getContext('2d').drawImage(originalImage, 0, 0);
-    return c;
-  })();
+  if (shouldCrop) {
+    const ratio = cropRatioSelect.value;
+    const { canvas, width, height } = cropImage(originalImage, ratio, cropOffsetX, cropOffsetY);
+    sourceCanvas = canvas;
+    cropW = width;
+    cropH = height;
+  } else {
+    // use original image (no crop)
+    const w = originalImage.naturalWidth;
+    const h = originalImage.naturalHeight;
+    sourceCanvas = document.createElement('canvas');
+    sourceCanvas.width = w;
+    sourceCanvas.height = h;
+    const ctx = sourceCanvas.getContext('2d');
+    ctx.drawImage(originalImage, 0, 0);
+    cropW = w;
+    cropH = h;
+  }
 
   currentCropCanvas = sourceCanvas;
-  currentCropDim = { width: sourceCanvas.width, height: sourceCanvas.height };
+  currentCropDim = { width: cropW, height: cropH };
 
-  // Scale to fit preview
-  const scaled = scaleToFit(currentCropDim.width, currentCropDim.height, 800);
+  // scale to fit preview
+  const scaled = scaleToFit(cropW, cropH, 800);
   previewCanvas.width = scaled.width;
   previewCanvas.height = scaled.height;
 
@@ -131,13 +129,98 @@ const redrawPreview = () => {
   ctx.clearRect(0, 0, scaled.width, scaled.height);
   ctx.drawImage(sourceCanvas, 0, 0, scaled.width, scaled.height);
 
-  // Draw grid
+  // draw grid
   const divX = parseInt(divXInput.value, 10) || 0;
   const divY = parseInt(divYInput.value, 10) || 0;
-  const colorStr = `hsl(${gridColor.h}, ${gridColor.s}%, ${gridColor.l}%)`;
+  const colorStr = `hsl(${gridHue}, 100%, 50%)`;
   drawGrid(ctx, scaled.width, scaled.height, divX, divY, colorStr);
 
   downloadBtn.disabled = false;
+};
+
+// ----- Drag handlers -----
+const getCanvasMousePos = (e) => {
+  const rect = previewCanvas.getBoundingClientRect();
+  return {
+    x: e.clientX - rect.left,
+    y: e.clientY - rect.top,
+  };
+};
+
+const handleMouseDown = (e) => {
+  if (!cropCheckbox.checked || !originalImage) return;
+
+  isDragging = true;
+  const pos = getCanvasMousePos(e);
+  dragStart.x = pos.x;
+  dragStart.y = pos.y;
+  dragStartOffset.x = cropOffsetX;
+  dragStartOffset.y = cropOffsetY;
+
+  previewCanvas.style.cursor = 'grabbing';
+  e.preventDefault(); // prevent text selection
+};
+
+const handleMouseMove = (e) => {
+  if (!isDragging) return;
+
+  const pos = getCanvasMousePos(e);
+  const dx = pos.x - dragStart.x;
+  const dy = pos.y - dragStart.y;
+
+  // Convert pixel movement to offset change in the original image space
+  // The preview canvas displays the cropped image scaled; the relationship:
+  //   pixelDelta * (originalCropSize / canvasDisplaySize) = offsetDelta * (maxOffsetRange)
+  const ratio = cropRatioSelect.value;
+  let targetRatio;
+  if (ratio === '1:1') targetRatio = 1;
+  else if (ratio === '4:3') targetRatio = 4 / 3;
+  else targetRatio = 1;
+
+  const origW = originalImage.naturalWidth;
+  const origH = originalImage.naturalHeight;
+  const currentRatio = origW / origH;
+  let cropW, cropH;
+  if (currentRatio > targetRatio) {
+    cropH = origH;
+    cropW = Math.round(origH * targetRatio);
+  } else {
+    cropW = origW;
+    cropH = Math.round(origW / targetRatio);
+  }
+
+  const maxStartX = Math.max(0, origW - cropW);
+  const maxStartY = Math.max(0, origH - cropH);
+
+  // Scale factor: canvas pixel → offset fraction
+  // pixelDx → change in startX (in original pixels)
+  // deltaStartX = dx * (cropW / previewCanvas.width)
+  // deltaOffsetX = deltaStartX / maxStartX
+  if (maxStartX > 0 && cropW > 0) {
+    const scaleX = (cropW / previewCanvas.width) / maxStartX;
+    cropOffsetX = dragStartOffset.x - dx * scaleX;
+  }
+  if (maxStartY > 0 && cropH > 0) {
+    const scaleY = (cropH / previewCanvas.height) / maxStartY;
+    cropOffsetY = dragStartOffset.y - dy * scaleY;
+  }
+
+  // Clamp offsets to [0, 1]
+  cropOffsetX = Math.max(0, Math.min(1, cropOffsetX));
+  cropOffsetY = Math.max(0, Math.min(1, cropOffsetY));
+
+  redrawPreview();
+};
+
+const handleMouseUp = () => {
+  if (!isDragging) return;
+  isDragging = false;
+  previewCanvas.style.cursor = cropCheckbox.checked ? 'move' : 'default';
+};
+
+// attach / detach canvas events based on crop state
+const updateCanvasCursor = () => {
+  previewCanvas.style.cursor = cropCheckbox.checked ? 'move' : 'default';
 };
 
 // ----- Error display -----
@@ -153,17 +236,21 @@ const handleFileSelect = async (file) => {
   try {
     originalImage = await loadImage(file);
     controlsDiv.style.display = 'flex';
-    // Initialize HSL picker if not yet created
-    if (!swatchElement) {
-      swatchElement = createHSLColorPicker(hslContainer);
+    // Initialize Hue picker if not yet created
+    if (!hslContainer.hasChildNodes()) {
+      createHuePicker(hslContainer);
     }
+    // reset crop offsets to centre when a new image is loaded
+    cropOffsetX = 0.5;
+    cropOffsetY = 0.5;
+    updateCanvasCursor();
     redrawPreview();
   } catch (err) {
     showError(err.message);
   }
 };
 
-// Drop zone events
+// drop zone events
 dropZone.addEventListener('click', () => fileInput.click());
 dropZone.addEventListener('dragover', (e) => {
   e.preventDefault();
@@ -184,12 +271,32 @@ fileInput.addEventListener('change', (e) => {
   if (file) handleFileSelect(file);
 });
 
-// Control changes → redraw
-cropRatioSelect.addEventListener('change', redrawPreview);
+// crop checkbox toggles visibility of crop ratio dropdown and canvas interactivity
+cropCheckbox.addEventListener('change', () => {
+  cropRatioSelect.style.display = cropCheckbox.checked ? 'inline-block' : 'none';
+  // reset offsets to centre when crop is re‑enabled
+  cropOffsetX = 0.5;
+  cropOffsetY = 0.5;
+  updateCanvasCursor();
+  redrawPreview();
+});
+
+cropRatioSelect.addEventListener('change', () => {
+  // reset offsets when ratio changes to avoid awkward crop positions
+  cropOffsetX = 0.5;
+  cropOffsetY = 0.5;
+  redrawPreview();
+});
+
 divXInput.addEventListener('input', redrawPreview);
 divYInput.addEventListener('input', redrawPreview);
 
-// Download
+// canvas drag events
+previewCanvas.addEventListener('mousedown', handleMouseDown);
+window.addEventListener('mousemove', handleMouseMove);
+window.addEventListener('mouseup', handleMouseUp);
+
+// download
 downloadBtn.addEventListener('click', () => {
   if (!previewCanvas.width || !previewCanvas.height) {
     showError('Nothing to download.');

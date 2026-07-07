@@ -1,1 +1,8 @@
 # .gitignore
+
+# ASCII Art here
+
+# Repository Specific
+node_modules/
+dist/
+package-lock.json

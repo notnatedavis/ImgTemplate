@@ -27,18 +27,19 @@ export const loadImage = (file) => {
 };
 
 /**
- * Crop an image to the given aspect ratio (centred crop)
- * 
+ * Crop an image to the given aspect ratio
+ * By default the crop is centred; offsetX and offsetY (0‑1) control the
+ * position of the crop rectangle (0 = left/top, 1 = right/bottom)
+ * Boundaries are automatically clamped so the crop rectangle stays inside the image
+ *
  * @param {HTMLImageElement} img
- * @param {string} ratio - 'original', '1:1', '4:3'
+ * @param {string} ratio - '1:1', '4:3', etc.
+ * @param {number} [offsetX=0.5] - Horizontal offset fraction (0‑1)
+ * @param {number} [offsetY=0.5] - Vertical offset fraction (0‑1)
  * @returns {{ canvas: HTMLCanvasElement, width: number, height: number }}
  */
-export const cropImage = (img, ratio = 'original') => {
+export const cropImage = (img, ratio = '1:1', offsetX = 0.5, offsetY = 0.5) => {
   const { naturalWidth: w, naturalHeight: h } = img;
-
-  if (ratio === 'original') {
-    return { canvas: null, width: w, height: h };
-  }
 
   let targetRatio;
   if (ratio === '1:1') targetRatio = 1;
@@ -46,21 +47,24 @@ export const cropImage = (img, ratio = 'original') => {
   else targetRatio = 1; // fallback
 
   const currentRatio = w / h;
-  let cropW, cropH, startX, startY;
+  let cropW, cropH, maxStartX, maxStartY;
 
   if (currentRatio > targetRatio) {
-    // image wider than target -> crop sides
+    // image wider than target → crop sides
     cropH = h;
-    cropW = h * targetRatio;
-    startX = (w - cropW) / 2;
-    startY = 0;
+    cropW = Math.round(h * targetRatio);
   } else {
-    // image taller than target -> crop top/bottom
+    // image taller or equal → crop top/bottom
     cropW = w;
-    cropH = w / targetRatio;
-    startX = 0;
-    startY = (h - cropH) / 2;
+    cropH = Math.round(w / targetRatio);
   }
+
+  maxStartX = Math.max(0, w - cropW);
+  maxStartY = Math.max(0, h - cropH);
+
+  // compute starting positions from offsets (clamped to valid range)
+  const startX = Math.min(Math.max(0, Math.round(offsetX * maxStartX)), maxStartX);
+  const startY = Math.min(Math.max(0, Math.round(offsetY * maxStartY)), maxStartY);
 
   const canvas = document.createElement('canvas');
   canvas.width = cropW;
