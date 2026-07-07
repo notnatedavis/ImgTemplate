@@ -1,0 +1,25 @@
+{
+  "name": "imgTemplate",
+  "version": "1.0.0",
+  "description": "browser-based tool to crop images and overlay custom grid lines.",
+  "type": "module",
+  "homepage": "https://notnatedavis.github.io/imgTemplate",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "predeploy": "npm run build",
+    "deploy": "gh-pages -d dist"
+  },
+  "devDependencies": {
+    "gh-pages": "^6.1.1",
+    "vite": "^5.2.0"
+  },
+  "keywords": ["image", "grid", "overlay", "tool"],
+  "author": "notnatedavis",
+  "license": "N/A",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/notnatedavis/imgTemplate"
+  }
+}

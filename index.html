@@ -1,0 +1,64 @@
+<!--   index.html -->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>imgTemplate – Grid Overlay Tool</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>imgTemplate</h1>
+      <p>Crop &amp; overlay custom grid lines</p>
+    </header>
+
+    <main>
+      <!-- Drop zone / file input -->
+      <div id="drop-zone" class="drop-zone">
+        <p>Drop an image here or click to select</p>
+        <input type="file" id="file-input" accept="image/jpeg, image/png" hidden />
+      </div>
+
+      <!-- Controls panel (hidden until image loaded) -->
+      <div id="controls" class="controls" style="display: none;">
+        <div class="control-group">
+          <label for="crop-ratio">Crop Ratio</label>
+          <select id="crop-ratio">
+            <option value="original">Original</option>
+            <option value="1:1" selected>1:1 (Square)</option>
+            <option value="4:3">4:3</option>
+          </select>
+        </div>
+
+        <div class="control-group">
+          <label for="divisions-x">Horizontal Divisions</label>
+          <input type="number" id="divisions-x" min="1" max="50" value="7" />
+        </div>
+
+        <div class="control-group">
+          <label for="divisions-y">Vertical Divisions</label>
+          <input type="number" id="divisions-y" min="1" max="50" value="7" />
+        </div>
+
+        <div class="control-group">
+          <label>Grid Line Colour</label>
+          <div id="hsl-picker-container"></div>
+        </div>
+
+        <button id="download-btn" disabled>Download Image</button>
+      </div>
+
+      <!-- Preview canvas -->
+      <div class="preview">
+        <canvas id="preview-canvas"></canvas>
+        <p id="error-message" class="error-message"></p>
+      </div>
+    </main>
+  </div>
+
+  <script type="module" src="/js/main.js"></script>
+</body>
+</html>
