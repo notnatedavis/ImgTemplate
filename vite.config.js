@@ -7,8 +7,8 @@ import path from 'path';
 
 // ----- Main -----
 export default defineConfig({
-  // Base path for GitHub Pages (repository name is 'imgTemplate')
-  base: '/imgTemplate/',
+  // base path for GitHub Pages
+  base: '/ImgTemplate/',
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src')
