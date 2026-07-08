@@ -10,13 +10,14 @@
  * @param {number} divX - number of horizontal divisions (0 = no lines)
  * @param {number} divY - number of vertical divisions (0 = no lines)
  * @param {string} color - CSS colour string
+ * @param {number} thickness - line width in pixels (default 1)
  */
-export const drawGrid = (ctx, width, height, divX = 7, divY = 7, color = '#ff0000') => {
-  if (divX < 0 || divY < 0) return;
+export const drawGrid = (ctx, width, height, divX = 7, divY = 7, color = '#ff0000', thickness = 1) => {
+  if (divX < 0 || divY < 0 || thickness <= 0) return;
 
   ctx.save();
   ctx.strokeStyle = color;
-  ctx.lineWidth = 1;
+  ctx.lineWidth = thickness;
 
   // Horizontal lines (rows)
   if (divY > 0) {
