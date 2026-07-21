@@ -1,7 +1,9 @@
 //   js/uiController.js
+
 //   DOM manipulation, event wiring, Hue‑only colour picker,
-//   interactive free‑form crop rectangle with handles, and
-//   adjustable grid line thickness
+//   interactive free‑form crop rectangle with handles,
+//   adjustable grid line thickness, and expandable crop
+//   (canvas can extend up to 150% of the original image size)
 
 // ----- Imports -----
 import { loadImage, cropImage, scaleToFit } from './imageUtils.js';
@@ -9,25 +11,30 @@ import { drawGrid } from './gridOverlay.js';
 import { downloadCanvas } from './downloadHelper.js';
 
 // ----- Constants -----
-const HANDLE_SIZE = 10;               // size of crop handle squares
-const MIN_CROP_SIZE = 20;             // minimum crop rectangle dimension (px)
+const HANDLE_SIZE = 10; // size of crop handle squares
+const MIN_CROP_SIZE = 20; // minimum crop rectangle dimension (px)
+const EXPAND_FACTOR = 1.5; // max crop rectangle size multiplier
 
 // ----- State -----
-let originalImage = null;             // HTMLImageElement
-let cropEnabled = false;              // whether crop checkbox is checked
-let aspectLock = false;               // true when 1:1 ratio is selected
+let originalImage = null; // HTMLImageElement
+let cropEnabled = false; // whether crop checkbox is checked
+let aspectLock = false; // true when 1:1 ratio is selected
 
 // crop rectangle in original image pixel coordinates
 let cropRect = { x: 0, y: 0, w: 0, h: 0 };
 
+// maximum dimensions for the expandable crop rectangle
+let maxCropW = 0;
+let maxCropH = 0;
+
 // grid settings
-let gridThickness = 1;                // line width
+let gridThickness = 1; // line width
 
 // drag interaction state
 let dragState = {
   active: false,
-  type: null,                        // 'move' | 'resize'
-  direction: null,                   // 'nw','n','ne','e','se','s','sw','w'
+  type: null, // 'move' | 'resize'
+  direction: null, // 'nw','n','ne','e','se','s','sw','w'
   startMouse: { x: 0, y: 0 },
   startRect: { x: 0, y: 0, w: 0, h: 0 }
 };
@@ -72,7 +79,7 @@ const createHuePicker = (container) => {
   hueSlider.className = 'hsl-slider';
   hueSlider.setAttribute('aria-label', 'Grid colour hue');
 
-  // full‑spectrum gradient from 0° to 360°
+  // full‑spectrum gradient from 0 - 360
   const gradient = `linear-gradient(
     to right,
     hsl(0,100%,50%),
@@ -102,11 +109,31 @@ const createHuePicker = (container) => {
   container.appendChild(pickerDiv);
 };
 
-// ----- Utility: clamp a value between min and max -----
+// ----- Utility: clamp val between min & max -----
 const clamp = (val, min, max) => Math.min(max, Math.max(min, val));
+
+// ----- Clamp the crop rectangle to allowed size and ensure it overlaps the image -----
+const clampCropRect = (rect) => {
+  if (!originalImage) return rect;
+  const imgW = originalImage.naturalWidth;
+  const imgH = originalImage.naturalHeight;
+
+  // clamp size
+  rect.w = clamp(rect.w, MIN_CROP_SIZE, maxCropW);
+  rect.h = clamp(rect.h, MIN_CROP_SIZE, maxCropH);
+
+  // ensure at least 1 px of the image is visible (overlap)
+  if (rect.x + rect.w <= 0) rect.x = -rect.w + 1;
+  if (rect.x >= imgW) rect.x = imgW - 1;
+  if (rect.y + rect.h <= 0) rect.y = -rect.h + 1;
+  if (rect.y >= imgH) rect.y = imgH - 1;
+
+  return rect;
+};
 
 // ----- Enforce aspect ratio on a rectangle (centered) -----
 const enforceAspectRatio = (rect, ratio = 1) => {
+  if (!originalImage) return rect;
   const imgW = originalImage.naturalWidth;
   const imgH = originalImage.naturalHeight;
   const { x, y, w, h } = rect;
@@ -118,26 +145,21 @@ const enforceAspectRatio = (rect, ratio = 1) => {
 
   let newW, newH;
   if (currentRatio > ratio) {
-    // too wide → reduce width to match ratio based on height
+    // too wide ; reduce width to match ratio based on height
     newW = h * ratio;
     newH = h;
   } else {
-    // too tall → reduce height to match ratio based on width
+    // too tall ; reduce height to match ratio based on width
     newW = w;
     newH = w / ratio;
   }
 
-  // center the new rectangle within the old one, then clamp to image bounds
+  // center the new rectangle within the old one
   let newX = x + (w - newW) / 2;
   let newY = y + (h - newH) / 2;
 
-  // clamp to image boundaries
-  newX = clamp(newX, 0, imgW - newW);
-  newY = clamp(newY, 0, imgH - newH);
-  newW = clamp(newW, MIN_CROP_SIZE, imgW - newX);
-  newH = clamp(newH, MIN_CROP_SIZE, imgH - newY);
-
-  return { x: newX, y: newY, w: newW, h: newH };
+  // apply to the rect and clamp using the new expanded bounds
+  return clampCropRect({ x: newX, y: newY, w: newW, h: newH });
 };
 
 // ----- Initialize / reset crop rectangle to full image -----
@@ -200,19 +222,19 @@ const getHandleUnderMouse = (canvasX, canvasY, canvasW, canvasH) => {
             Math.abs(canvasY - centerY) <= threshold);
   };
 
-  // Corners
+  // corners
   if (near(0, 0))                         return 'nw';
   if (near(canvasW - s, 0))               return 'ne';
   if (near(0, canvasH - s))               return 'sw';
   if (near(canvasW - s, canvasH - s))     return 'se';
 
-  // Edges
+  // edges
   if (near(canvasW / 2 - s / 2, 0))                    return 'n';
   if (near(canvasW / 2 - s / 2, canvasH - s))          return 's';
   if (near(0, canvasH / 2 - s / 2))                    return 'w';
   if (near(canvasW - s, canvasH / 2 - s / 2))          return 'e';
 
-  // Check if mouse is inside the canvas (but not near a handle) -> move
+  // check if mouse is inside canvas (but not near handle) -> move
   if (canvasX > 0 && canvasX < canvasW && canvasY > 0 && canvasY < canvasH) {
     return 'move';
   }
@@ -243,52 +265,53 @@ const updateCanvasCursor = (canvasX, canvasY) => {
   previewCanvas.style.cursor = cursorMap[handle] || 'default';
 };
 
-// ----- Preview redraw -----
+// ----- Render the final full‑resolution output (image + grid) onto a canvas -----
+const renderOutputCanvas = (canvas) => {
+  if (!originalImage) return;
+  const imgW = originalImage.naturalWidth;
+  const imgH = originalImage.naturalHeight;
+
+  if (cropEnabled) {
+    // use the crop rectangle as the output canvas dimensions
+    canvas.width = cropRect.w;
+    canvas.height = cropRect.h;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    // draw the original image at an offset based on the crop rectangle position
+    ctx.drawImage(originalImage, -cropRect.x, -cropRect.y);
+  } else {
+    canvas.width = imgW;
+    canvas.height = imgH;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(originalImage, 0, 0);
+  }
+
+  // draw grid on the full‑resolution canvas
+  const divX = parseInt(divXInput.value, 10) || 0;
+  const divY = parseInt(divYInput.value, 10) || 0;
+  const colorStr = `hsl(${gridHue}, 100%, 50%)`;
+  drawGrid(canvas.getContext('2d'), canvas.width, canvas.height, divX, divY, colorStr, gridThickness);
+};
+
+// ----- Preview redraw (scaled view with interactive handles) -----
 const redrawPreview = () => {
   if (!originalImage) return;
 
-  let sourceCanvas;
-  let cropW, cropH;
+  // 1. generate full-resolution output on an off‑screen canvas
+  const offscreen = document.createElement('canvas');
+  renderOutputCanvas(offscreen);
 
-  if (cropEnabled) {
-    // crop to the current crop rectangle
-    const { x, y, w, h } = cropRect;
-    sourceCanvas = document.createElement('canvas');
-    sourceCanvas.width = w;
-    sourceCanvas.height = h;
-    const ctx = sourceCanvas.getContext('2d');
-    ctx.drawImage(originalImage, x, y, w, h, 0, 0, w, h);
-    cropW = w;
-    cropH = h;
-  } else {
-    // full image
-    const w = originalImage.naturalWidth;
-    const h = originalImage.naturalHeight;
-    sourceCanvas = document.createElement('canvas');
-    sourceCanvas.width = w;
-    sourceCanvas.height = h;
-    const ctx = sourceCanvas.getContext('2d');
-    ctx.drawImage(originalImage, 0, 0);
-    cropW = w;
-    cropH = h;
-  }
-
-  // scale to fit preview
-  const scaled = scaleToFit(cropW, cropH, 800);
+  // 2. scale to fit the preview area
+  const scaled = scaleToFit(offscreen.width, offscreen.height, 800);
   previewCanvas.width = scaled.width;
   previewCanvas.height = scaled.height;
 
   const ctx = previewCanvas.getContext('2d');
   ctx.clearRect(0, 0, scaled.width, scaled.height);
-  ctx.drawImage(sourceCanvas, 0, 0, scaled.width, scaled.height);
+  ctx.drawImage(offscreen, 0, 0, scaled.width, scaled.height);
 
-  // draw grid
-  const divX = parseInt(divXInput.value, 10) || 0;
-  const divY = parseInt(divYInput.value, 10) || 0;
-  const colorStr = `hsl(${gridHue}, 100%, 50%)`;
-  drawGrid(ctx, scaled.width, scaled.height, divX, divY, colorStr, gridThickness);
-
-  // draw crop handles on top
+  // 3. draw crop handles on top of the scaled preview
   drawCropHandles(ctx, scaled.width, scaled.height);
 
   downloadBtn.disabled = false;
@@ -332,12 +355,10 @@ const handleMouseMove = (e) => {
 
   if (!dragState.active) return;
 
-  const imgW = originalImage.naturalWidth;
-  const imgH = originalImage.naturalHeight;
   const canvasW = previewCanvas.width;
   const canvasH = previewCanvas.height;
 
-  // scale factors: canvas pixels to original image pixels
+  // scale factors: canvas pixels to cropRect coordinate space
   const scaleX = cropRect.w / canvasW;
   const scaleY = cropRect.h / canvasH;
 
@@ -350,34 +371,29 @@ const handleMouseMove = (e) => {
     // move the entire rectangle
     newRect.x = dragState.startRect.x - dx;
     newRect.y = dragState.startRect.y - dy;
-    // clamp to image boundaries
-    newRect.x = clamp(newRect.x, 0, imgW - newRect.w);
-    newRect.y = clamp(newRect.y, 0, imgH - newRect.h);
+    // clamp to allowed expanded bounds (intersection + size limits)
+    newRect = clampCropRect(newRect);
   } else if (dragState.type === 'resize') {
     const dir = dragState.direction;
-    // adjust rectangle edges based on direction
     let { x, y, w, h } = newRect;
 
     if (dir.includes('e')) {
-      w = clamp(dragState.startRect.w + dx, MIN_CROP_SIZE, imgW - x);
+      w = clamp(dragState.startRect.w + dx, MIN_CROP_SIZE, maxCropW - x);
     }
     if (dir.includes('w')) {
-      const newW = clamp(dragState.startRect.w - dx, MIN_CROP_SIZE, imgW);
+      const newW = clamp(dragState.startRect.w - dx, MIN_CROP_SIZE, maxCropW);
       x = dragState.startRect.x + dragState.startRect.w - newW;
       w = newW;
-      x = clamp(x, 0, imgW - w);
     }
     if (dir.includes('s')) {
-      h = clamp(dragState.startRect.h + dy, MIN_CROP_SIZE, imgH - y);
+      h = clamp(dragState.startRect.h + dy, MIN_CROP_SIZE, maxCropH - y);
     }
     if (dir.includes('n')) {
-      const newH = clamp(dragState.startRect.h - dy, MIN_CROP_SIZE, imgH);
+      const newH = clamp(dragState.startRect.h - dy, MIN_CROP_SIZE, maxCropH);
       y = dragState.startRect.y + dragState.startRect.h - newH;
       h = newH;
-      y = clamp(y, 0, imgH - h);
     }
 
-    // if only one direction specified (edge resize), ensure the opposite doesn't change
     newRect.x = x;
     newRect.y = y;
     newRect.w = w;
@@ -386,6 +402,8 @@ const handleMouseMove = (e) => {
     // enforce aspect ratio if locked
     if (aspectLock) {
       newRect = enforceAspectRatio(newRect, 1);
+    } else {
+      newRect = clampCropRect(newRect);
     }
   }
 
@@ -399,21 +417,21 @@ const handleMouseUp = () => {
 
 // ----- Event wiring -----
 
-// Canvas drag events
+// canvas drag events
 previewCanvas.addEventListener('mousedown', handleMouseDown);
 window.addEventListener('mousemove', handleMouseMove);
 window.addEventListener('mouseup', handleMouseUp);
 
-// Prevent browser drag behavior on canvas
+// prevent browser drag behavior on canvas
 previewCanvas.addEventListener('dragstart', e => e.preventDefault());
 
-// Thickness slider
+// thickness slider
 thicknessSlider.addEventListener('input', (e) => {
   gridThickness = parseFloat(e.target.value);
   redrawPreview();
 });
 
-// Crop checkbox
+// crop checkbox
 cropCheckbox.addEventListener('change', () => {
   cropEnabled = cropCheckbox.checked;
   cropRatioSelect.style.display = cropEnabled ? 'inline-block' : 'none';
@@ -423,11 +441,11 @@ cropCheckbox.addEventListener('change', () => {
   redrawPreview();
 });
 
-// Crop ratio select
+// crop ratio select
 cropRatioSelect.addEventListener('change', () => {
   if (cropRatioSelect.value === '1:1') {
     aspectLock = true;
-    // adjust current rectangle to be square
+    // adjust current rectangle to be square (respects expand bounds)
     cropRect = enforceAspectRatio(cropRect, 1);
   } else {
     aspectLock = false;
@@ -439,7 +457,7 @@ cropRatioSelect.addEventListener('change', () => {
 divXInput.addEventListener('input', redrawPreview);
 divYInput.addEventListener('input', redrawPreview);
 
-// ----- Drop / file handling (unchanged) -----
+// ----- Drop / file handling -----
 
 const handleFileSelect = async (file) => {
   try {
@@ -448,6 +466,11 @@ const handleFileSelect = async (file) => {
     if (!hslContainer.hasChildNodes()) {
       createHuePicker(hslContainer);
     }
+
+    // Compute max expandable dimensions (150 % of original)
+    maxCropW = originalImage.naturalWidth * EXPAND_FACTOR;
+    maxCropH = originalImage.naturalHeight * EXPAND_FACTOR;
+
     // Initial crop rectangle is full image; set crop to disabled initially
     cropEnabled = false;
     cropCheckbox.checked = false;
@@ -486,12 +509,15 @@ fileInput.addEventListener('change', (e) => {
 
 // ----- Download -----
 downloadBtn.addEventListener('click', () => {
-  if (!previewCanvas.width || !previewCanvas.height) {
+  if (!originalImage) {
     showError('Nothing to download.');
     return;
   }
   try {
-    downloadCanvas(previewCanvas);
+    // generate full‑resolution output on a fresh canvas and download it
+    const outputCanvas = document.createElement('canvas');
+    renderOutputCanvas(outputCanvas);
+    downloadCanvas(outputCanvas);
   } catch (err) {
     showError(err.message);
   }
