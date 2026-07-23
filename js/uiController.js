@@ -2,23 +2,34 @@
 
 //   DOM manipulation, event wiring, Hue‑only colour picker,
 //   interactive free‑form crop rectangle with handles,
-//   adjustable grid line thickness, and expandable crop
-//   (canvas can extend up to 150% of the original image size)
+//   adjustable grid line thickness, expandable crop,
+//   and optional vertical/horizontal flip of the output
 
 // ----- Imports -----
 import { loadImage, cropImage, scaleToFit } from './imageUtils.js';
 import { drawGrid } from './gridOverlay.js';
 import { downloadCanvas } from './downloadHelper.js';
 
+// ----- Utility: simple debounce to avoid excessive canvas redraws -----
+const debounce = (fn, delay) => {
+  let timer;
+  return (...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), delay);
+  };
+};
+
 // ----- Constants -----
-const HANDLE_SIZE = 10; // size of crop handle squares
-const MIN_CROP_SIZE = 20; // minimum crop rectangle dimension (px)
-const EXPAND_FACTOR = 1.5; // max crop rectangle size multiplier
+const HANDLE_SIZE = 10;        // size of crop handle squares
+const MIN_CROP_SIZE = 20;      // minimum crop rectangle dimension (px)
+const EXPAND_FACTOR = 1.5;     // max crop rectangle size multiplier
+const PREVIEW_MAX_WIDTH = 800; // max preview canvas width (pixels)
+const DEBOUNCE_DELAY = 30;     // ms for input debounce
 
 // ----- State -----
-let originalImage = null; // HTMLImageElement
-let cropEnabled = false; // whether crop checkbox is checked
-let aspectLock = false; // true when 1:1 ratio is selected
+let originalImage = null;      // HTMLImageElement
+let cropEnabled = false;       // whether crop checkbox is checked
+let aspectLock = false;        // true when 1:1 ratio is selected
 
 // crop rectangle in original image pixel coordinates
 let cropRect = { x: 0, y: 0, w: 0, h: 0 };
@@ -28,13 +39,17 @@ let maxCropW = 0;
 let maxCropH = 0;
 
 // grid settings
-let gridThickness = 1; // line width
+let gridThickness = 1;         // line width
+
+// flip settings
+let flipVertical = false;
+let flipHorizontal = false;
 
 // drag interaction state
 let dragState = {
   active: false,
-  type: null, // 'move' | 'resize'
-  direction: null, // 'nw','n','ne','e','se','s','sw','w'
+  type: null,                  // 'move' | 'resize'
+  direction: null,             // 'nw','n','ne','e','se','s','sw','w'
   startMouse: { x: 0, y: 0 },
   startRect: { x: 0, y: 0, w: 0, h: 0 }
 };
@@ -52,9 +67,19 @@ const divXInput = document.getElementById('divisions-x');
 const divYInput = document.getElementById('divisions-y');
 const thicknessSlider = document.getElementById('thickness');
 const hslContainer = document.getElementById('hsl-picker-container');
+const flipVerticalCheckbox = document.getElementById('flip-vertical');
+const flipHorizontalCheckbox = document.getElementById('flip-horizontal');
 
 // ----- Hue‑only colour picker -----
 let gridHue = 0;   // default hue (red)
+
+/**
+ * Keep the thickness slider's track and thumb colour in sync with gridHue.
+ */
+const updateThicknessSliderColor = () => {
+  const color = `hsl(${gridHue}, 100%, 50%)`;
+  thicknessSlider.style.setProperty('--thickness-color', color);
+};
 
 const createHuePicker = (container) => {
   container.innerHTML = '';
@@ -79,7 +104,7 @@ const createHuePicker = (container) => {
   hueSlider.className = 'hsl-slider';
   hueSlider.setAttribute('aria-label', 'Grid colour hue');
 
-  // full‑spectrum gradient from 0 - 360
+  // full‑spectrum gradient from 0° to 360°
   const gradient = `linear-gradient(
     to right,
     hsl(0,100%,50%),
@@ -96,20 +121,25 @@ const createHuePicker = (container) => {
     hueSlider.style.setProperty('--thumb-color', `hsl(${gridHue}, 100%, 50%)`);
   };
 
+  // Debounced version of redrawPreview to avoid choking the browser
+  const debouncedRedraw = debounce(redrawPreview, DEBOUNCE_DELAY);
+
   hueSlider.addEventListener('input', (e) => {
     gridHue = Number(e.target.value);
     updateSliderStyle();
-    redrawPreview();
+    updateThicknessSliderColor(); // keep thickness slider in sync
+    debouncedRedraw();
   });
 
   updateSliderStyle();
+  updateThicknessSliderColor();   // apply initial colour to thickness slider
   hueRow.appendChild(hueSlider);
   pickerDiv.appendChild(hueRow);
 
   container.appendChild(pickerDiv);
 };
 
-// ----- Utility: clamp val between min & max -----
+// ----- Utility: clamp a value between min and max -----
 const clamp = (val, min, max) => Math.min(max, Math.max(min, val));
 
 // ----- Clamp the crop rectangle to allowed size and ensure it overlaps the image -----
@@ -145,11 +175,11 @@ const enforceAspectRatio = (rect, ratio = 1) => {
 
   let newW, newH;
   if (currentRatio > ratio) {
-    // too wide ; reduce width to match ratio based on height
+    // too wide → reduce width to match ratio based on height
     newW = h * ratio;
     newH = h;
   } else {
-    // too tall ; reduce height to match ratio based on width
+    // too tall → reduce height to match ratio based on width
     newW = w;
     newH = w / ratio;
   }
@@ -222,19 +252,19 @@ const getHandleUnderMouse = (canvasX, canvasY, canvasW, canvasH) => {
             Math.abs(canvasY - centerY) <= threshold);
   };
 
-  // corners
-  if (near(0, 0))                         return 'nw';
-  if (near(canvasW - s, 0))               return 'ne';
-  if (near(0, canvasH - s))               return 'sw';
-  if (near(canvasW - s, canvasH - s))     return 'se';
+  // Corners
+  if (near(0, 0))                     return 'nw';
+  if (near(canvasW - s, 0))           return 'ne';
+  if (near(0, canvasH - s))           return 'sw';
+  if (near(canvasW - s, canvasH - s)) return 'se';
 
-  // edges
-  if (near(canvasW / 2 - s / 2, 0))                    return 'n';
-  if (near(canvasW / 2 - s / 2, canvasH - s))          return 's';
-  if (near(0, canvasH / 2 - s / 2))                    return 'w';
-  if (near(canvasW - s, canvasH / 2 - s / 2))          return 'e';
+  // Edges
+  if (near(canvasW / 2 - s / 2, 0))           return 'n';
+  if (near(canvasW / 2 - s / 2, canvasH - s)) return 's';
+  if (near(0, canvasH / 2 - s / 2))           return 'w';
+  if (near(canvasW - s, canvasH / 2 - s / 2)) return 'e';
 
-  // check if mouse is inside canvas (but not near handle) -> move
+  // Check if mouse is inside the canvas (but not near a handle) -> move
   if (canvasX > 0 && canvasX < canvasW && canvasY > 0 && canvasY < canvasH) {
     return 'move';
   }
@@ -265,33 +295,48 @@ const updateCanvasCursor = (canvasX, canvasY) => {
   previewCanvas.style.cursor = cursorMap[handle] || 'default';
 };
 
-// ----- Render the final full‑resolution output (image + grid) onto a canvas -----
+// ----- Render the final full‑resolution output (image + grid) with optional flip -----
 const renderOutputCanvas = (canvas) => {
   if (!originalImage) return;
   const imgW = originalImage.naturalWidth;
   const imgH = originalImage.naturalHeight;
 
   if (cropEnabled) {
-    // use the crop rectangle as the output canvas dimensions
     canvas.width = cropRect.w;
     canvas.height = cropRect.h;
-    const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    // draw the original image at an offset based on the crop rectangle position
-    ctx.drawImage(originalImage, -cropRect.x, -cropRect.y);
   } else {
     canvas.width = imgW;
     canvas.height = imgH;
-    const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
+
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Apply flip transformations (horizontal then vertical)
+  ctx.save();
+  if (flipHorizontal) {
+    ctx.scale(-1, 1);
+    ctx.translate(-canvas.width, 0);
+  }
+  if (flipVertical) {
+    ctx.scale(1, -1);
+    ctx.translate(0, -canvas.height);
+  }
+
+  // Draw the original image at the correct position
+  if (cropEnabled) {
+    ctx.drawImage(originalImage, -cropRect.x, -cropRect.y);
+  } else {
     ctx.drawImage(originalImage, 0, 0);
   }
 
-  // draw grid on the full‑resolution canvas
+  // Draw grid on top (grid is also flipped because of the transform)
   const divX = parseInt(divXInput.value, 10) || 0;
   const divY = parseInt(divYInput.value, 10) || 0;
   const colorStr = `hsl(${gridHue}, 100%, 50%)`;
-  drawGrid(canvas.getContext('2d'), canvas.width, canvas.height, divX, divY, colorStr, gridThickness);
+  drawGrid(ctx, canvas.width, canvas.height, divX, divY, colorStr, gridThickness);
+
+  ctx.restore();
 };
 
 // ----- Preview redraw (scaled view with interactive handles) -----
@@ -303,7 +348,7 @@ const redrawPreview = () => {
   renderOutputCanvas(offscreen);
 
   // 2. scale to fit the preview area
-  const scaled = scaleToFit(offscreen.width, offscreen.height, 800);
+  const scaled = scaleToFit(offscreen.width, offscreen.height, PREVIEW_MAX_WIDTH);
   previewCanvas.width = scaled.width;
   previewCanvas.height = scaled.height;
 
@@ -324,6 +369,30 @@ const getCanvasMousePos = (e) => {
     x: e.clientX - rect.left,
     y: e.clientY - rect.top,
   };
+};
+
+/**
+ * Given a drag direction string, remap it so that screen‑space handle interactions
+ * correctly adjust the original‑image crop rectangle when flips are active.
+ * 
+ * Horizontal flip swaps left/right, vertical flip swaps top/bottom.
+ */
+const remapDirection = (direction, flipH, flipV) => {
+  if (!direction) return direction;
+  let mapped = direction;
+  if (flipH) {
+    mapped = mapped
+      .replace('e', 'TMP_E')
+      .replace('w', 'e')
+      .replace('TMP_E', 'w');
+  }
+  if (flipV) {
+    mapped = mapped
+      .replace('n', 'TMP_N')
+      .replace('s', 'n')
+      .replace('TMP_N', 's');
+  }
+  return mapped;
 };
 
 const handleMouseDown = (e) => {
@@ -358,37 +427,47 @@ const handleMouseMove = (e) => {
   const canvasW = previewCanvas.width;
   const canvasH = previewCanvas.height;
 
+  // Avoid division by zero (canvas should always have dimensions)
+  if (!canvasW || !canvasH) return;
+
   // scale factors: canvas pixels to cropRect coordinate space
   const scaleX = cropRect.w / canvasW;
   const scaleY = cropRect.h / canvasH;
 
-  const dx = (pos.x - dragState.startMouse.x) * scaleX;
-  const dy = (pos.y - dragState.startMouse.y) * scaleY;
+  let dx = (pos.x - dragState.startMouse.x) * scaleX;
+  let dy = (pos.y - dragState.startMouse.y) * scaleY;
+
+  // When the output is flipped, invert the delta so that
+  // dragging on screen still feels natural (right = right, down = down).
+  if (flipHorizontal) dx = -dx;
+  if (flipVertical) dy = -dy;
 
   let newRect = { ...dragState.startRect };
 
   if (dragState.type === 'move') {
-    // move the entire rectangle
-    newRect.x = dragState.startRect.x - dx;
-    newRect.y = dragState.startRect.y - dy;
-    // clamp to allowed expanded bounds (intersection + size limits)
+    // Move the whole rectangle – now using +dx/+dy so that
+    // dragging right actually moves the crop to the right.
+    newRect.x = dragState.startRect.x + dx;
+    newRect.y = dragState.startRect.y + dy;
     newRect = clampCropRect(newRect);
   } else if (dragState.type === 'resize') {
-    const dir = dragState.direction;
+    // Remap the handle direction to account for flips.
+    // This ensures the same resize logic works without duplicating code.
+    const mappedDir = remapDirection(dragState.direction, flipHorizontal, flipVertical);
     let { x, y, w, h } = newRect;
 
-    if (dir.includes('e')) {
+    if (mappedDir.includes('e')) {
       w = clamp(dragState.startRect.w + dx, MIN_CROP_SIZE, maxCropW - x);
     }
-    if (dir.includes('w')) {
+    if (mappedDir.includes('w')) {
       const newW = clamp(dragState.startRect.w - dx, MIN_CROP_SIZE, maxCropW);
       x = dragState.startRect.x + dragState.startRect.w - newW;
       w = newW;
     }
-    if (dir.includes('s')) {
+    if (mappedDir.includes('s')) {
       h = clamp(dragState.startRect.h + dy, MIN_CROP_SIZE, maxCropH - y);
     }
-    if (dir.includes('n')) {
+    if (mappedDir.includes('n')) {
       const newH = clamp(dragState.startRect.h - dy, MIN_CROP_SIZE, maxCropH);
       y = dragState.startRect.y + dragState.startRect.h - newH;
       h = newH;
@@ -399,7 +478,6 @@ const handleMouseMove = (e) => {
     newRect.w = w;
     newRect.h = h;
 
-    // enforce aspect ratio if locked
     if (aspectLock) {
       newRect = enforceAspectRatio(newRect, 1);
     } else {
@@ -415,47 +493,58 @@ const handleMouseUp = () => {
   dragState.active = false;
 };
 
-// ----- Event wiring -----
+// ----- Event wiring with debouncing for frequent inputs -----
+const debouncedRedraw = debounce(redrawPreview, DEBOUNCE_DELAY);
 
-// canvas drag events
+// Canvas drag events
 previewCanvas.addEventListener('mousedown', handleMouseDown);
 window.addEventListener('mousemove', handleMouseMove);
 window.addEventListener('mouseup', handleMouseUp);
 
-// prevent browser drag behavior on canvas
+// Prevent browser drag behavior on canvas
 previewCanvas.addEventListener('dragstart', e => e.preventDefault());
 
-// thickness slider
+// Thickness slider – debounce redraw
 thicknessSlider.addEventListener('input', (e) => {
   gridThickness = parseFloat(e.target.value);
-  redrawPreview();
+  debouncedRedraw();
 });
 
-// crop checkbox
+// Crop checkbox
 cropCheckbox.addEventListener('change', () => {
   cropEnabled = cropCheckbox.checked;
   cropRatioSelect.style.display = cropEnabled ? 'inline-block' : 'none';
   if (cropEnabled) {
     resetCropRect();
   }
-  redrawPreview();
+  redrawPreview(); // immediate redraw for toggle
 });
 
-// crop ratio select
+// Crop ratio select
 cropRatioSelect.addEventListener('change', () => {
   if (cropRatioSelect.value === '1:1') {
     aspectLock = true;
-    // adjust current rectangle to be square (respects expand bounds)
     cropRect = enforceAspectRatio(cropRect, 1);
   } else {
     aspectLock = false;
   }
+  redrawPreview(); // immediate redraw on ratio change
+});
+
+// Divisions inputs – debounce redraw
+divXInput.addEventListener('input', debouncedRedraw);
+divYInput.addEventListener('input', debouncedRedraw);
+
+// Flip checkboxes – immediate redraw (checkbox changes are slow enough)
+flipVerticalCheckbox.addEventListener('change', (e) => {
+  flipVertical = e.target.checked;
   redrawPreview();
 });
 
-// Divisions inputs
-divXInput.addEventListener('input', redrawPreview);
-divYInput.addEventListener('input', redrawPreview);
+flipHorizontalCheckbox.addEventListener('change', (e) => {
+  flipHorizontal = e.target.checked;
+  redrawPreview();
+});
 
 // ----- Drop / file handling -----
 
@@ -465,11 +554,20 @@ const handleFileSelect = async (file) => {
     controlsDiv.style.display = 'flex';
     if (!hslContainer.hasChildNodes()) {
       createHuePicker(hslContainer);
+    } else {
+      // ensure thickness slider colour is correct even if picker already exists
+      updateThicknessSliderColor();
     }
 
     // Compute max expandable dimensions (150 % of original)
     maxCropW = originalImage.naturalWidth * EXPAND_FACTOR;
     maxCropH = originalImage.naturalHeight * EXPAND_FACTOR;
+
+    // Reset flip states on new image load
+    flipVertical = false;
+    flipHorizontal = false;
+    flipVerticalCheckbox.checked = false;
+    flipHorizontalCheckbox.checked = false;
 
     // Initial crop rectangle is full image; set crop to disabled initially
     cropEnabled = false;

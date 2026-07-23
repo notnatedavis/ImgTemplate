@@ -7,8 +7,8 @@
   --color-border: #cccccc;
   --color-text: #333333;
   --color-text-light: #666666;
-  --color-primary: #1a73e8;
-  --color-primary-hover: #1557b0;
+  --color-primary: #ac5f98;
+  --color-primary-hover: #ac5f98;
   --color-error: #d93025;
 
   --space-xs: 4px;
@@ -27,6 +27,7 @@
 
   --shadow-sm: 0 1px 3px rgba(0,0,0,0.12);
   --shadow-md: 0 4px 8px rgba(0,0,0,0.15);
+  --shadow-lg: 0 8px 24px rgba(0,0,0,0.12);
   --radius: 8px;
 }
 
@@ -41,6 +42,7 @@ body {
   background-color: var(--color-bg);
   color: var(--color-text);
   line-height: 1.5;
+  min-height: 100vh;
 }
 
 #app {
@@ -49,44 +51,156 @@ body {
   padding: var(--space-lg) var(--space-md);
 }
 
+/* ----- Header ----- */
 header {
   text-align: center;
   margin-bottom: var(--space-xl);
+  padding-bottom: var(--space-lg);
+  border-bottom: 2px solid var(--color-primary);
 }
 
 header h1 {
-  font-size: var(--font-size-xl);
+  font-size: 2rem;
   font-weight: var(--font-weight-bold);
   margin-bottom: var(--space-xs);
+  color: var(--color-primary);
+  letter-spacing: -0.5px;
 }
 
 header p {
   color: var(--color-text-light);
+  font-size: 1.05rem;
 }
 
-/* Drop zone */
+/* ----- Sidebar ----- */
+
+/* Fixed container – only the tab takes layout space */
+.sidebar-container {
+  position: fixed;
+  left: 0;
+  top: 0;
+  height: 100vh;
+  width: 30px;                 /* same as tab width – invisible trigger strip */
+  z-index: 1000;
+}
+
+/* Invisible trigger tab (no visual indicator, only hover area) */
+.sidebar-tab {
+  width: 30px;
+  height: 100%;
+  background: transparent;
+  color: transparent;
+  border-right: 1px solid rgba(0,0,0,0.08);
+}
+
+/* The sliding panel – hidden to the left until hover */
+.sidebar-panel {
+  position: absolute;
+  top: 0;
+  left: 30px;                  /* starts right after the tab */
+  width: 280px;
+  height: 100%;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-md);
+  overflow-y: auto;
+  border-right: 1px solid var(--color-border);
+  transform: translateX(-100%);   /* hidden: moved left by its own width */
+  transition: transform 0.3s ease;
+}
+
+/* Reveal panel when hovering over the container (the tab) */
+.sidebar-container:hover .sidebar-panel {
+  transform: translateX(0);
+}
+
+/* Adjust controls inside the sidebar panel – stack vertically */
+.sidebar-panel .controls {
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+  margin: 0;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+/* Control groups inside sidebar take full width */
+.sidebar-panel .control-group {
+  width: 100%;
+}
+
+.sidebar-panel .control-group label {
+  margin-bottom: 4px;
+}
+
+.sidebar-panel select,
+.sidebar-panel input[type="number"] {
+  width: 100%;
+}
+
+/* Crop group – label, checkbox and select on the same row */
+.crop-group {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+.crop-group label {
+  margin-bottom: 0 !important;
+}
+
+/* Divisions group – both labels and inputs on the same row */
+.divisions-group {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+.divisions-group label {
+  margin-bottom: 0 !important;
+  white-space: nowrap;
+}
+.divisions-group input[type="number"] {
+  width: 45px;
+  min-width: 45px;
+}
+
+/* ----- Drop zone ----- */
 .drop-zone {
   border: 2px dashed var(--color-border);
   border-radius: var(--radius);
-  padding: var(--space-xl);
+  padding: 3rem var(--space-xl);
   text-align: center;
   cursor: pointer;
-  transition: background-color 0.2s, border-color 0.2s;
+  transition: background-color 0.2s, border-color 0.2s, transform 0.1s;
   margin-bottom: var(--space-lg);
+  background-color: var(--color-surface);
+  box-shadow: var(--shadow-sm);
 }
 
 .drop-zone:hover,
 .drop-zone.drag-over {
   background-color: rgba(26,115,232,0.05);
   border-color: var(--color-primary);
+  transform: scale(1.01);
+}
+
+.drop-zone .drop-icon {
+  font-size: 2.5rem;
+  display: block;
+  margin-bottom: var(--space-sm);
+  opacity: 0.8;
 }
 
 .drop-zone p {
   color: var(--color-text-light);
   font-size: var(--font-size-md);
+  margin: 0;
 }
 
-/* Controls panel */
+/* ----- Controls (global fallback, still works if used elsewhere) ----- */
 .controls {
   display: flex;
   flex-wrap: wrap;
@@ -111,14 +225,16 @@ header p {
   color: var(--color-text-light);
 }
 
+/* Number inputs width reduced for global layout */
 select, input[type="number"] {
   padding: var(--space-sm);
   border: 1px solid var(--color-border);
   border-radius: 4px;
   font-size: var(--font-size-md);
-  width: 120px;
+  width: 50px;
 }
 
+/* Download button */
 #download-btn {
   padding: var(--space-sm) var(--space-md);
   background-color: var(--color-primary);
@@ -128,12 +244,14 @@ select, input[type="number"] {
   font-size: var(--font-size-md);
   font-weight: var(--font-weight-bold);
   cursor: pointer;
-  transition: background-color 0.2s;
+  transition: background-color 0.2s, transform 0.1s;
   align-self: flex-end;
+  margin-top: auto;
 }
 
 #download-btn:hover:not(:disabled) {
   background-color: var(--color-primary-hover);
+  transform: translateY(-1px);
 }
 
 #download-btn:disabled {
@@ -141,7 +259,7 @@ select, input[type="number"] {
   cursor: not-allowed;
 }
 
-/* Preview area */
+/* ----- Preview area ----- */
 .preview {
   display: flex;
   justify-content: center;
@@ -149,15 +267,21 @@ select, input[type="number"] {
   min-height: 200px;
   background: var(--color-surface);
   border-radius: var(--radius);
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-lg);
   overflow: hidden;
   margin-bottom: var(--space-lg);
+  transition: box-shadow 0.3s;
+}
+
+.preview:hover {
+  box-shadow: 0 12px 28px rgba(0,0,0,0.15);
 }
 
 #preview-canvas {
   max-width: 100%;
   height: auto;
   display: block;
+  border-radius: 4px;
 }
 
 .error-message {
@@ -167,7 +291,7 @@ select, input[type="number"] {
   text-align: center;
 }
 
-/* HSL picker (custom) */
+/* ----- HSL picker (custom) ----- */
 .hsl-picker {
   display: flex;
   flex-direction: column;
@@ -192,19 +316,19 @@ select, input[type="number"] {
 
 .hsl-slider {
   flex: 1;
-  height: 4px;
+  height: 6px;
   -webkit-appearance: none;
   appearance: none;
   outline: none;
-  border-radius: 2px;
+  border-radius: 3px;
   cursor: pointer;
 }
 
 .hsl-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 12px;
-  height: 12px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
   border: 2px solid var(--color-border);
   background: var(--thumb-color, #fff);
@@ -218,8 +342,8 @@ select, input[type="number"] {
 }
 
 .hsl-slider::-moz-range-thumb {
-  width: 12px;
-  height: 12px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
   border: 2px solid var(--color-border);
   background: var(--thumb-color, #fff);
@@ -227,37 +351,42 @@ select, input[type="number"] {
   cursor: pointer;
 }
 
-/* Thickness slider (simpler appearance, matches overall style) */
+/* Thickness slider – track colour and thumb sync with grid hue */
 .thickness-slider {
   width: 100%;
-  height: 4px;
+  height: 6px;
   -webkit-appearance: none;
   appearance: none;
   outline: none;
-  border-radius: 2px;
-  background: #ddd;
+  border-radius: 3px;
+  background: linear-gradient(to right, var(--thickness-color, var(--color-primary)), #e0e0e0);
   cursor: pointer;
 }
 
 .thickness-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 14px;
-  height: 14px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
-  background: var(--color-primary);
+  background: var(--thickness-color, var(--color-primary));
   border: 2px solid white;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
   cursor: pointer;
+  transition: transform 0.1s;
+}
+
+.thickness-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
 }
 
 .thickness-slider::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
-  background: var(--color-primary);
+  background: var(--thickness-color, var(--color-primary));
   border: 2px solid white;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
   cursor: pointer;
 }
 
