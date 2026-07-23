@@ -1,0 +1,84 @@
+<!--   index.html -->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ImgTemplate – Grid Overlay Tool</title>
+  <script type="module" crossorigin src="/ImgTemplate/assets/index-BWoG9yJp.js"></script>
+  <link rel="stylesheet" crossorigin href="/ImgTemplate/assets/index-DBrJJwwB.css">
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>ImgTemplate/</h1>
+      <p>Crop &amp; Overlay Image Manipulation</p>
+    </header>
+
+    <!-- Sidebar container – only the tab is always visible -->
+    <div id="sidebar-container" class="sidebar-container">
+      <div id="sidebar-tab" class="sidebar-tab"></div>
+      <div id="sidebar-panel" class="sidebar-panel">
+        <!-- Controls panel (hidden until image loaded) -->
+        <div id="controls" class="controls" style="display: none;">
+          <div class="control-group crop-group">
+            <label for="crop-checkbox">Crop Image</label>
+            <input type="checkbox" id="crop-checkbox" />
+            <select id="crop-ratio" style="display: none;">
+              <option value="freeform">Freeform</option>
+              <option value="1:1">1:1 (Square)</option>
+            </select>
+          </div>
+
+          <div class="control-group divisions-group">
+            <label for="divisions-x">Horizontal Divs</label>
+            <input type="number" id="divisions-x" min="1" max="50" value="3" />
+            <label for="divisions-y">Vertical Divs</label>
+            <input type="number" id="divisions-y" min="1" max="50" value="3" />
+          </div>
+
+          <div class="control-group">
+            <label for="thickness">Grid Line Thickness</label>
+            <input type="range" id="thickness" class="thickness-slider" min="0.5" max="10" step="0.5" value="1" />
+          </div>
+
+          <div class="control-group">
+            <label>Grid Line Colour (Hue)</label>
+            <div id="hsl-picker-container"></div>
+          </div>
+
+          <div class="control-group">
+            <label>
+              <input type="checkbox" id="flip-vertical" />
+              Flip Vertical
+            </label>
+            <label>
+              <input type="checkbox" id="flip-horizontal" />
+              Flip Horizontal
+            </label>
+          </div>
+
+          <button id="download-btn" disabled>Download Image</button>
+        </div>
+      </div>
+    </div>
+
+    <main>
+      <!-- Drop zone / file input -->
+      <div id="drop-zone" class="drop-zone">
+        <span class="drop-icon">🖼️</span>
+        <p>Drop an image here or click to select</p>
+        <input type="file" id="file-input" accept="image/jpeg, image/png" hidden />
+      </div>
+
+      <!-- Preview canvas -->
+      <div class="preview">
+        <canvas id="preview-canvas"></canvas>
+        <p id="error-message" class="error-message"></p>
+      </div>
+    </main>
+  </div>
+
+</body>
+</html>
