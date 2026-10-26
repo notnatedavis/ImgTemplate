@@ -1,0 +1,80 @@
+<!--   index.html -->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ImgTemplate – Grid Overlay Tool</title>
+  <script type="module" crossorigin src="/ImgTemplate/assets/index-CA3fq60-.js"></script>
+  <link rel="stylesheet" crossorigin href="/ImgTemplate/assets/index-CAEM5_qn.css">
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>Img Template</h1>
+      <p>Crop, position &amp; overlay custom grid lines</p>
+    </header>
+
+    <main>
+      <!-- Drop zone / file input -->
+      <div id="drop-zone" class="drop-zone">
+        <p>Drop an image anywhere or click to select</p>
+        <input type="file" id="file-input" accept="image/jpeg, image/png" hidden />
+      </div>
+
+      <!-- Controls panel (hidden until image loaded) -->
+      <div id="controls" class="controls" style="display: none;">
+        <div class="control-group">
+          <label for="crop-checkbox">Crop Image</label>
+          <input type="checkbox" id="crop-checkbox" />
+          <select id="crop-ratio" style="display: none;">
+            <option value="1:1">1:1 (Square)</option>
+            <option value="4:3">4:3</option>
+          </select>
+        </div>
+
+        <div class="control-group">
+          <label for="divisions-x">Horizontal Divisions</label>
+          <input type="number" id="divisions-x" min="1" max="50" value="3" />
+        </div>
+
+        <div class="control-group">
+          <label for="divisions-y">Vertical Divisions</label>
+          <input type="number" id="divisions-y" min="1" max="50" value="3" />
+        </div>
+
+        <div class="control-group">
+          <label for="grid-thickness">Line Thickness (px)</label>
+          <input type="number" id="grid-thickness" min="1" max="20" value="1" step="1" />
+        </div>
+
+        <div class="control-group">
+          <label>Grid Line Colour (Hue)</label>
+          <div id="hsl-picker-container"></div>
+        </div>
+
+        <div class="control-group">
+          <label for="canvas-padding">Canvas Padding <span class="value-display" id="canvas-padding-value">100%</span></label>
+          <input type="range" id="canvas-padding" min="100" max="150" value="100" step="1" />
+        </div>
+
+        <div class="control-group">
+          <label for="image-zoom">Image Zoom <span class="value-display" id="image-zoom-value">100%</span></label>
+          <input type="range" id="image-zoom" min="25" max="300" value="100" step="1" />
+        </div>
+
+        <button id="reset-btn" class="secondary-btn">Reset Position</button>
+        <button id="download-btn" disabled>Download Image</button>
+      </div>
+
+      <!-- Preview canvas -->
+      <div class="preview">
+        <canvas id="preview-canvas"></canvas>
+        <p id="error-message" class="error-message"></p>
+      </div>
+    </main>
+  </div>
+
+</body>
+</html>
