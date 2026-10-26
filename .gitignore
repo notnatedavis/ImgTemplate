@@ -6,7 +6,8 @@
 # ─▄██▀───▄██▀───▄██▀
 # ─███────███────███
 
-# Repository Specific
+# --- Repository Specific ---
 node_modules/
 dist/
 # package-lock.json
+# .github/workflows/deploy.yml

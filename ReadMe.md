@@ -61,6 +61,7 @@ ImgTemplate/
 │   └── style.css
 ├── js/
 │   ├── downloadHelper.js
+│   ├── dragDrop.js
 │   ├── gridOverlay.js
 │   ├── imageUtils.js
 │   ├── main.js

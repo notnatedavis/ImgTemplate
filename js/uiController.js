@@ -6,6 +6,7 @@
 import { loadImage, cropImage, scaleToFit } from './imageUtils.js';
 import { drawGrid } from './gridOverlay.js';
 import { downloadCanvas } from './downloadHelper.js';
+import { setupDragAndDrop, validateImageFile } from './dragDrop.js';
 
 // ----- State -----
 let originalImage = null;          // HTMLImageElement
@@ -233,6 +234,13 @@ const showError = (msg) => {
 
 // ----- Event Handlers -----
 const handleFileSelect = async (file) => {
+  const { valid, error } = validateImageFile(file);
+  if (!valid) {
+    console.error(`[ImgTemplate] ${error}`);
+    showError(error);
+    return;
+  }
+
   try {
     originalImage = await loadImage(file);
     controlsDiv.style.display = 'flex';
@@ -246,28 +254,25 @@ const handleFileSelect = async (file) => {
     updateCanvasCursor();
     redrawPreview();
   } catch (err) {
+    console.error('[ImgTemplate] Failed to load image:', err);
     showError(err.message);
   }
 };
 
-// drop zone events
+// drop zone click still opens the native file picker
 dropZone.addEventListener('click', () => fileInput.click());
-dropZone.addEventListener('dragover', (e) => {
-  e.preventDefault();
-  dropZone.classList.add('drag-over');
-});
-dropZone.addEventListener('dragleave', () => {
-  dropZone.classList.remove('drag-over');
-});
-dropZone.addEventListener('drop', (e) => {
-  e.preventDefault();
-  dropZone.classList.remove('drag-over');
-  const file = e.dataTransfer.files[0];
-  if (file) handleFileSelect(file);
+
+// window‑level drag & drop (accepts drops anywhere on the page)
+setupDragAndDrop({
+  dropZone,
+  onFile: handleFileSelect,
+  onError: showError,
 });
 
+// file input selection — reset so the same file can be re‑selected
 fileInput.addEventListener('change', (e) => {
   const file = e.target.files[0];
+  e.target.value = '';
   if (file) handleFileSelect(file);
 });
 
