@@ -119,6 +119,18 @@ select, input[type="number"] {
   width: 120px;
 }
 
+input[type="range"] {
+  width: 120px;
+  accent-color: var(--color-primary);
+  cursor: pointer;
+}
+
+.value-display {
+  color: var(--color-text);
+  font-weight: var(--font-weight-normal);
+  font-variant-numeric: tabular-nums;
+}
+
 #download-btn {
   padding: var(--space-sm) var(--space-md);
   background-color: var(--color-primary);
@@ -139,6 +151,24 @@ select, input[type="number"] {
 #download-btn:disabled {
   background-color: var(--color-border);
   cursor: not-allowed;
+}
+
+.secondary-btn {
+  padding: var(--space-sm) var(--space-md);
+  background-color: transparent;
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-bold);
+  cursor: pointer;
+  transition: background-color 0.2s, border-color 0.2s;
+  align-self: flex-end;
+}
+
+.secondary-btn:hover {
+  background-color: var(--color-bg);
+  border-color: var(--color-text-light);
 }
 
 /* Preview area */

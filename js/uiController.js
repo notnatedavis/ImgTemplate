@@ -1,6 +1,6 @@
 //   js/uiController.js
 //   DOM manipulation, event wiring, Hue‑only colour picker, and
-//   interactive crop repositioning via drag on the preview canvas
+//   interactive image positioning (pan, zoom, canvas padding) via drag
 
 // ----- Imports -----
 import { loadImage, cropImage, scaleToFit } from './imageUtils.js';
@@ -10,17 +10,24 @@ import { setupDragAndDrop, validateImageFile } from './dragDrop.js';
 
 // ----- State -----
 let originalImage = null;          // HTMLImageElement
-let currentCropCanvas = null;      // HTMLCanvasElement from crop (or null)
-let currentCropDim = { width: 0, height: 0 };
+let baseCanvas = null;             // cropped or original image, pre‑rendered
+let baseWidth = 0;                 // base canvas dimensions
+let baseHeight = 0;
 
-// crop offsets (0‑1) – default centred
+// Viewport parameters (canvas beyond the base image)
+let canvasPadding = 1.0;           // 1.0 – 1.5 (extends canvas beyond base)
+let imageScale = 1.0;              // 0.25 – 3.0 (resize the base image)
+let imageOffsetX = 0;              // pan offset in canvas pixels
+let imageOffsetY = 0;
+
+// crop offsets (0‑1) within the source image (always centred for now)
 let cropOffsetX = 0.5;
 let cropOffsetY = 0.5;
 
-// drag tracking
+// drag tracking (pan)
 let isDragging = false;
-let dragStart = { x: 0, y: 0 };       // mouse position at drag start
-let dragStartOffset = { x: 0.5, y: 0.5 }; // offsets at drag start
+let dragStart = { x: 0, y: 0 };
+let dragStartOffset = { x: 0, y: 0 };
 
 // ----- DOM references -----
 const dropZone = document.getElementById('drop-zone');
@@ -33,7 +40,13 @@ const cropCheckbox = document.getElementById('crop-checkbox');
 const cropRatioSelect = document.getElementById('crop-ratio');
 const divXInput = document.getElementById('divisions-x');
 const divYInput = document.getElementById('divisions-y');
+const thicknessInput = document.getElementById('grid-thickness');
 const hslContainer = document.getElementById('hsl-picker-container');
+const paddingSlider = document.getElementById('canvas-padding');
+const paddingValue = document.getElementById('canvas-padding-value');
+const zoomSlider = document.getElementById('image-zoom');
+const zoomValue = document.getElementById('image-zoom-value');
+const resetBtn = document.getElementById('reset-btn');
 
 // ----- Hue‑only colour picker -----
 let gridHue = 0;   // default hue (red)
@@ -91,55 +104,92 @@ const createHuePicker = (container) => {
   container.appendChild(pickerDiv);
 };
 
+// ----- Layout helpers -----
+
+/**
+ * Compute the current canvas size (base image × padding factor).
+ * @returns {{ width: number, height: number }}
+ */
+const getCanvasSize = () => ({
+  width: Math.round(baseWidth * canvasPadding),
+  height: Math.round(baseHeight * canvasPadding),
+});
+
+/**
+ * Clamp the pan offset so the image center stays within the canvas.
+ * This keeps the image at least partially visible regardless of drag or zoom.
+ */
+const clampPan = () => {
+  const { width, height } = getCanvasSize();
+  const maxX = width / 2;
+  const maxY = height / 2;
+  imageOffsetX = Math.max(-maxX, Math.min(maxX, imageOffsetX));
+  imageOffsetY = Math.max(-maxY, Math.min(maxY, imageOffsetY));
+};
+
 // ----- Preview redraw -----
 const redrawPreview = () => {
   if (!originalImage) return;
 
-  const shouldCrop = cropCheckbox.checked;
-  let sourceCanvas;
-  let cropW, cropH;
-
-  if (shouldCrop) {
+  // 1) Build the base canvas (cropped or original)
+  if (cropCheckbox.checked) {
     const ratio = cropRatioSelect.value;
     const { canvas, width, height } = cropImage(originalImage, ratio, cropOffsetX, cropOffsetY);
-    sourceCanvas = canvas;
-    cropW = width;
-    cropH = height;
+    baseCanvas = canvas;
+    baseWidth = width;
+    baseHeight = height;
   } else {
-    // use original image (no crop)
     const w = originalImage.naturalWidth;
     const h = originalImage.naturalHeight;
-    sourceCanvas = document.createElement('canvas');
-    sourceCanvas.width = w;
-    sourceCanvas.height = h;
-    const ctx = sourceCanvas.getContext('2d');
-    ctx.drawImage(originalImage, 0, 0);
-    cropW = w;
-    cropH = h;
+    baseCanvas = document.createElement('canvas');
+    baseCanvas.width = w;
+    baseCanvas.height = h;
+    baseCanvas.getContext('2d').drawImage(originalImage, 0, 0);
+    baseWidth = w;
+    baseHeight = h;
   }
 
-  currentCropCanvas = sourceCanvas;
-  currentCropDim = { width: cropW, height: cropH };
+  // 2) Canvas dimensions from padding
+  const { width: canvasW, height: canvasH } = getCanvasSize();
 
-  // scale to fit preview
-  const scaled = scaleToFit(cropW, cropH, 800);
+  // 3) Image placement (center + pan, scaled)
+  const drawnW = Math.round(baseWidth * imageScale);
+  const drawnH = Math.round(baseHeight * imageScale);
+  const drawX = Math.round((canvasW - drawnW) / 2 + imageOffsetX);
+  const drawY = Math.round((canvasH - drawnH) / 2 + imageOffsetY);
+
+  // 4) Scale canvas down to fit the preview viewport
+  const scaled = scaleToFit(canvasW, canvasH, 800);
   previewCanvas.width = scaled.width;
   previewCanvas.height = scaled.height;
 
   const ctx = previewCanvas.getContext('2d');
-  ctx.clearRect(0, 0, scaled.width, scaled.height);
-  ctx.drawImage(sourceCanvas, 0, 0, scaled.width, scaled.height);
+  const pxScaleX = scaled.width / canvasW;
+  const pxScaleY = scaled.height / canvasH;
 
-  // draw grid
+  // 5) White background (shows through wherever the image doesn't reach)
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, scaled.width, scaled.height);
+
+  // 6) Draw the base image with pan + zoom
+  ctx.drawImage(
+    baseCanvas,
+    0, 0, baseWidth, baseHeight,
+    drawX * pxScaleX, drawY * pxScaleY,
+    drawnW * pxScaleX, drawnH * pxScaleY
+  );
+
+  // 7) Grid overlay
   const divX = parseInt(divXInput.value, 10) || 0;
   const divY = parseInt(divYInput.value, 10) || 0;
+  const thickness = parseFloat(thicknessInput.value) || 1;
   const colorStr = `hsl(${gridHue}, 100%, 50%)`;
-  drawGrid(ctx, scaled.width, scaled.height, divX, divY, colorStr);
+  drawGrid(ctx, scaled.width, scaled.height, divX, divY, colorStr, thickness);
 
   downloadBtn.disabled = false;
 };
 
-// ----- Drag handlers -----
+// ----- Drag handlers (pan) -----
 const getCanvasMousePos = (e) => {
   const rect = previewCanvas.getBoundingClientRect();
   return {
@@ -149,14 +199,14 @@ const getCanvasMousePos = (e) => {
 };
 
 const handleMouseDown = (e) => {
-  if (!cropCheckbox.checked || !originalImage) return;
+  if (!originalImage) return;
 
   isDragging = true;
   const pos = getCanvasMousePos(e);
   dragStart.x = pos.x;
   dragStart.y = pos.y;
-  dragStartOffset.x = cropOffsetX;
-  dragStartOffset.y = cropOffsetY;
+  dragStartOffset.x = imageOffsetX;
+  dragStartOffset.y = imageOffsetY;
 
   previewCanvas.style.cursor = 'grabbing';
   e.preventDefault(); // prevent text selection
@@ -169,59 +219,22 @@ const handleMouseMove = (e) => {
   const dx = pos.x - dragStart.x;
   const dy = pos.y - dragStart.y;
 
-  // Convert pixel movement to offset change in the original image space
-  // The preview canvas displays the cropped image scaled; the relationship:
-  //   pixelDelta * (originalCropSize / canvasDisplaySize) = offsetDelta * (maxOffsetRange)
-  const ratio = cropRatioSelect.value;
-  let targetRatio;
-  if (ratio === '1:1') targetRatio = 1;
-  else if (ratio === '4:3') targetRatio = 4 / 3;
-  else targetRatio = 1;
+  // Convert preview pixels back to canvas pixels
+  const { width: canvasW, height: canvasH } = getCanvasSize();
+  const pxScaleX = previewCanvas.width / canvasW;
+  const pxScaleY = previewCanvas.height / canvasH;
 
-  const origW = originalImage.naturalWidth;
-  const origH = originalImage.naturalHeight;
-  const currentRatio = origW / origH;
-  let cropW, cropH;
-  if (currentRatio > targetRatio) {
-    cropH = origH;
-    cropW = Math.round(origH * targetRatio);
-  } else {
-    cropW = origW;
-    cropH = Math.round(origW / targetRatio);
-  }
+  imageOffsetX = dragStartOffset.x + dx / pxScaleX;
+  imageOffsetY = dragStartOffset.y + dy / pxScaleY;
 
-  const maxStartX = Math.max(0, origW - cropW);
-  const maxStartY = Math.max(0, origH - cropH);
-
-  // Scale factor: canvas pixel → offset fraction
-  // pixelDx → change in startX (in original pixels)
-  // deltaStartX = dx * (cropW / previewCanvas.width)
-  // deltaOffsetX = deltaStartX / maxStartX
-  if (maxStartX > 0 && cropW > 0) {
-    const scaleX = (cropW / previewCanvas.width) / maxStartX;
-    cropOffsetX = dragStartOffset.x - dx * scaleX;
-  }
-  if (maxStartY > 0 && cropH > 0) {
-    const scaleY = (cropH / previewCanvas.height) / maxStartY;
-    cropOffsetY = dragStartOffset.y - dy * scaleY;
-  }
-
-  // Clamp offsets to [0, 1]
-  cropOffsetX = Math.max(0, Math.min(1, cropOffsetX));
-  cropOffsetY = Math.max(0, Math.min(1, cropOffsetY));
-
+  clampPan();
   redrawPreview();
 };
 
 const handleMouseUp = () => {
   if (!isDragging) return;
   isDragging = false;
-  previewCanvas.style.cursor = cropCheckbox.checked ? 'move' : 'default';
-};
-
-// attach / detach canvas events based on crop state
-const updateCanvasCursor = () => {
-  previewCanvas.style.cursor = cropCheckbox.checked ? 'move' : 'default';
+  previewCanvas.style.cursor = 'move';
 };
 
 // ----- Error display -----
@@ -248,10 +261,20 @@ const handleFileSelect = async (file) => {
     if (!hslContainer.hasChildNodes()) {
       createHuePicker(hslContainer);
     }
-    // reset crop offsets to centre when a new image is loaded
+
+    // Reset all viewport parameters for a new image
     cropOffsetX = 0.5;
     cropOffsetY = 0.5;
-    updateCanvasCursor();
+    canvasPadding = 1.0;
+    imageScale = 1.0;
+    imageOffsetX = 0;
+    imageOffsetY = 0;
+    paddingSlider.value = '100';
+    paddingValue.textContent = '100%';
+    zoomSlider.value = '100';
+    zoomValue.textContent = '100%';
+
+    previewCanvas.style.cursor = 'move';
     redrawPreview();
   } catch (err) {
     console.error('[ImgTemplate] Failed to load image:', err);
@@ -276,27 +299,63 @@ fileInput.addEventListener('change', (e) => {
   if (file) handleFileSelect(file);
 });
 
-// crop checkbox toggles visibility of crop ratio dropdown and canvas interactivity
+// crop checkbox toggles visibility of crop ratio dropdown; base dims change,
+// so pan resets (crop offsets stay centred)
 cropCheckbox.addEventListener('change', () => {
   cropRatioSelect.style.display = cropCheckbox.checked ? 'inline-block' : 'none';
-  // reset offsets to centre when crop is re‑enabled
   cropOffsetX = 0.5;
   cropOffsetY = 0.5;
-  updateCanvasCursor();
+  imageOffsetX = 0;
+  imageOffsetY = 0;
   redrawPreview();
 });
 
 cropRatioSelect.addEventListener('change', () => {
-  // reset offsets when ratio changes to avoid awkward crop positions
+  // base dimensions change with ratio — recentre pan
   cropOffsetX = 0.5;
   cropOffsetY = 0.5;
+  imageOffsetX = 0;
+  imageOffsetY = 0;
   redrawPreview();
 });
 
 divXInput.addEventListener('input', redrawPreview);
 divYInput.addEventListener('input', redrawPreview);
+thicknessInput.addEventListener('input', redrawPreview);
 
-// canvas drag events
+// canvas padding slider — 100% to 150% of base image size
+paddingSlider.addEventListener('input', (e) => {
+  canvasPadding = Number(e.target.value) / 100;
+  paddingValue.textContent = `${e.target.value}%`;
+  clampPan();
+  redrawPreview();
+});
+
+// image zoom slider — 25% to 300% of base image size
+zoomSlider.addEventListener('input', (e) => {
+  imageScale = Number(e.target.value) / 100;
+  zoomValue.textContent = `${e.target.value}%`;
+  clampPan();
+  redrawPreview();
+});
+
+// reset button — recenter the image at 100% scale with no padding
+resetBtn.addEventListener('click', () => {
+  if (!originalImage) return;
+  imageOffsetX = 0;
+  imageOffsetY = 0;
+  imageScale = 1.0;
+  canvasPadding = 1.0;
+  cropOffsetX = 0.5;
+  cropOffsetY = 0.5;
+  paddingSlider.value = '100';
+  paddingValue.textContent = '100%';
+  zoomSlider.value = '100';
+  zoomValue.textContent = '100%';
+  redrawPreview();
+});
+
+// canvas drag events (pan the image)
 previewCanvas.addEventListener('mousedown', handleMouseDown);
 window.addEventListener('mousemove', handleMouseMove);
 window.addEventListener('mouseup', handleMouseUp);
